@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background/flutter_background.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/print_bridge_config.dart';
+import '../core/background/background_bootstrap.dart';
 import '../services/print_bridge_services.dart';
 
 enum BridgeStatus {
@@ -49,6 +51,26 @@ class PrintBridgeProvider extends ChangeNotifier {
 
   /// Prevents starting the Android foreground service more than once.
   bool _backgroundExecutionEnabled = false;
+
+  // --- Notification watchdog -------------------------------------------------
+  // On Android 14+ the user can swipe away a foreground-service notification
+  // (the service keeps running). While connected we check every 5 seconds and,
+  // if no notification of this app is showing, post our own ONGOING
+  // notification (same text). Ongoing notifications that are not tied to a
+  // foreground service cannot be swiped away, on any Android version.
+  // No service restart is needed, so Android 12+ background-start limits
+  // do not apply.
+  static const int _statusNotifId = 7791;
+  static const String _statusChannelId = 'print_bridge_status';
+  static const String _statusTitle = 'RestroSanjalBridge';
+  static const String _statusBody =
+      'RestroSanjalBridge app is running in the background';
+
+  final FlutterLocalNotificationsPlugin _notifPlugin =
+  FlutterLocalNotificationsPlugin();
+  bool _notifPluginReady = false;
+  Timer? _notifWatchdog;
+  bool _checkingNotification = false;
 
   static const _prefsPrefix = 'print_bridge_config.';
 
@@ -212,6 +234,17 @@ class PrintBridgeProvider extends ChangeNotifier {
       // notification can appear in the tray.
       await _ensureNotificationPermission();
 
+      // The plugin is configured here rather than in main() so a failure is
+      // reported in the activity log instead of hanging a blank window.
+      final configured = await BackgroundBootstrap.ensureInitialized(
+            (ok, message) =>
+            _addLog(ok ? LogLevel.info : LogLevel.error, message),
+      );
+
+      if (!configured) {
+        return false;
+      }
+
       debugPrint('Print Bridge: starting Android foreground service...');
 
       final enabled = await FlutterBackground.enableBackgroundExecution();
@@ -227,6 +260,11 @@ class PrintBridgeProvider extends ChangeNotifier {
         );
 
         notifyListeners();
+
+        _warnIfBatteryOptimised();
+
+        // Re-show the notification within 5s if the user swipes it away.
+        _startNotificationWatchdog();
 
         return true;
       }
@@ -253,7 +291,26 @@ class PrintBridgeProvider extends ChangeNotifier {
     }
   }
 
+  /// Non-blocking hint: Android may throttle or kill the poll loop once the
+  /// screen is off unless the app is exempt from battery optimisation.
+  void _warnIfBatteryOptimised() {
+    BackgroundBootstrap.isBatteryExempt().then((exempt) {
+      if (exempt) return;
+
+      _addLog(
+        LogLevel.warn,
+        'Battery optimisation is still active. Set Print Bridge to '
+            '"Unrestricted" in Settings > Apps > Print Bridge > Battery, '
+            'otherwise Android can pause polling when the screen is off.',
+      );
+    });
+  }
+
   Future<void> _disableBackgroundExecution() async {
+    // Always stop the watchdog first so it can't restart the service while
+    // we are shutting it down.
+    _stopNotificationWatchdog();
+
     if (!_backgroundExecutionEnabled) {
       return;
     }
@@ -278,6 +335,125 @@ class PrintBridgeProvider extends ChangeNotifier {
         LogLevel.warn,
         'Failed to stop background execution: $e',
       );
+    }
+  }
+
+  // ===========================================================================
+  // NOTIFICATION WATCHDOG
+  // ===========================================================================
+
+  void _startNotificationWatchdog() {
+    _notifWatchdog?.cancel();
+
+    _notifWatchdog = Timer.periodic(
+      const Duration(seconds: 5),
+          (_) => _checkNotification(),
+    );
+  }
+
+  void _stopNotificationWatchdog() {
+    _notifWatchdog?.cancel();
+
+    _notifWatchdog = null;
+
+    // Remove the notification we may have posted ourselves.
+    if (_notifPluginReady) {
+      _notifPlugin.cancel(_statusNotifId).catchError((_) {});
+    }
+  }
+
+  Future<void> _ensureNotifPlugin() async {
+    if (_notifPluginReady) return;
+
+    await _notifPlugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+
+    final android = _notifPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _statusChannelId,
+        'Print Bridge status',
+        description: 'Shows that Print Bridge is running in the background',
+        importance: Importance.low,
+      ),
+    );
+
+    _notifPluginReady = true;
+  }
+
+  Future<void> _postStatusNotification(String icon) {
+    return _notifPlugin.show(
+      _statusNotifId,
+      _statusTitle,
+      _statusBody,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _statusChannelId,
+          'Print Bridge status',
+          channelDescription:
+          'Shows that Print Bridge is running in the background',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          showWhen: false,
+          onlyAlertOnce: true,
+          icon: icon,
+        ),
+      ),
+    );
+  }
+
+  /// If no notification of this app is in the tray (the user swiped the
+  /// foreground-service one away), post an ongoing one.
+  Future<void> _checkNotification() async {
+    if (_checkingNotification ||
+        !_backgroundExecutionEnabled ||
+        _pollTimer == null) {
+      return;
+    }
+
+    _checkingNotification = true;
+
+    try {
+      await _ensureNotifPlugin();
+
+      final android = _notifPlugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+      if (android == null) {
+        return;
+      }
+
+      final active = await android.getActiveNotifications();
+
+      // A notification is still showing: nothing to do.
+      if (active.isNotEmpty) {
+        return;
+      }
+
+      // Disconnect may have happened while we were awaiting.
+      if (!_backgroundExecutionEnabled || _pollTimer == null) {
+        return;
+      }
+
+      try {
+        await _postStatusNotification('ic_notification');
+      } catch (_) {
+        // Drawable missing: fall back to the launcher icon.
+        await _postStatusNotification('@mipmap/ic_launcher');
+      }
+
+      _addLog(LogLevel.info, 'Background notification restored.');
+    } catch (e) {
+      debugPrint('Print Bridge notification watchdog error: $e');
+    } finally {
+      _checkingNotification = false;
     }
   }
 
@@ -553,6 +729,8 @@ class PrintBridgeProvider extends ChangeNotifier {
     _pollTimer?.cancel();
 
     _pollTimer = null;
+
+    _stopNotificationWatchdog();
 
     // ChangeNotifier.dispose() cannot await.
     // Stop the Android foreground service without blocking dispose().
