@@ -1,6 +1,8 @@
+import '../core/constants/api_constant.dart';
+
 /// Configuration for the print bridge.
 ///
-/// This mirrors the fields that used to live in the Node.js `.env` file:
+/// Mirrors the fields configured for the RestroSanjal Print Bridge:
 /// SERVER_URL, BRIDGE_TOKEN, CLIENT_ID, PRINTER_IP, PRINTER_PORT,
 /// POLL_INTERVAL, LOG_LEVEL.
 class BridgeConfig {
@@ -13,12 +15,12 @@ class BridgeConfig {
   final String logLevel;
 
   const BridgeConfig({
-    this.serverUrl = 'http://localhost',
+    this.serverUrl = ApiConstant.baseUrl,
     this.bridgeToken = '',
     this.clientId = '',
     this.printerIp = '',
-    this.printerPort = '9100',
-    this.pollInterval = '3000',
+    this.printerPort = ApiConstant.defaultPrinterPort,
+    this.pollInterval = ApiConstant.defaultPollInterval,
     this.logLevel = 'info',
   });
 
@@ -52,26 +54,40 @@ class BridgeConfig {
     'logLevel': logLevel,
   };
 
-  factory BridgeConfig.fromMap(Map<String, String> map) => BridgeConfig(
-    serverUrl: map['serverUrl'] ?? 'http://localhost',
-    bridgeToken: map['bridgeToken'] ?? '',
-    clientId: map['clientId'] ?? '',
-    printerIp: map['printerIp'] ?? '',
-    printerPort: map['printerPort'] ?? '9100',
-    pollInterval: map['pollInterval'] ?? '3000',
-    logLevel: map['logLevel'] ?? 'info',
-  );
+  factory BridgeConfig.fromMap(Map<String, String> map) {
+    final rawUrl = map['serverUrl'];
+    // Migrate any legacy localhost values to the production baseUrl
+    final resolvedUrl = (rawUrl == null ||
+            rawUrl.isEmpty ||
+            rawUrl.contains('localhost') ||
+            rawUrl.contains('127.0.0.1') ||
+            rawUrl.contains('10.0.2.2'))
+        ? ApiConstant.baseUrl
+        : rawUrl;
 
-  /// Strips trailing slashes, same as the Node version's SERVER_URL handling.
+    return BridgeConfig(
+      serverUrl: resolvedUrl,
+      bridgeToken: map['bridgeToken'] ?? '',
+      clientId: map['clientId'] ?? '',
+      printerIp: map['printerIp'] ?? '',
+      printerPort: map['printerPort'] ?? ApiConstant.defaultPrinterPort,
+      pollInterval: map['pollInterval'] ?? ApiConstant.defaultPollInterval,
+      logLevel: map['logLevel'] ?? 'info',
+    );
+  }
+
+  /// Strips trailing slashes from the server URL.
   String get cleanServerUrl => serverUrl.replaceAll(RegExp(r'/+$'), '');
 
-  /// Poll interval in ms, floored at 1000ms just like the original.
+  /// Poll interval in ms, floored at 1000ms.
   int get pollIntervalMs {
     final v = int.tryParse(pollInterval) ?? 3000;
     return v < 1000 ? 1000 : v;
   }
 
-  int get printerPortInt => int.tryParse(printerPort) ?? 9100;
+  int get printerPortInt =>
+      int.tryParse(printerPort) ?? int.parse(ApiConstant.defaultPrinterPort);
 
-  bool get isValid => bridgeToken.trim().isNotEmpty && serverUrl.trim().isNotEmpty;
+  bool get isValid =>
+      bridgeToken.trim().isNotEmpty && serverUrl.trim().isNotEmpty;
 }

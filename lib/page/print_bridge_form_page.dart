@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/print_bridge_config.dart';
+import '../core/constants/api_constant.dart';
 import '../provider/print_bridge_form_provider.dart';
 import '../services/print_bridge_services.dart';
 
@@ -125,6 +126,28 @@ class _PrintBridgeFormPageState extends State<PrintBridgeFormPage> {
     );
   }
 
+  Future<void> _discoverPrinters() async {
+    final provider = context.read<PrintBridgeProvider>();
+    await provider.saveConfig(_configFromFields());
+    await provider.discoverPrinters();
+    if (!mounted) return;
+    if (provider.discoveredPrinters.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Found ${provider.discoveredPrinters.length} printer(s). Tap a chip to select.'),
+          backgroundColor: Colors.green.shade600,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No printers found on local network.'),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _serverUrlCtrl.dispose();
@@ -212,7 +235,7 @@ class _PrintBridgeFormPageState extends State<PrintBridgeFormPage> {
             _LabeledField(
               label: 'Server URL',
               required: true,
-              hint: 'http://localhost',
+              hint: ApiConstant.baseUrl,
               controller: _serverUrlCtrl,
               icon: Icons.dns_outlined,
               validator: (v) => (v == null || v.trim().isEmpty)
@@ -223,20 +246,14 @@ class _PrintBridgeFormPageState extends State<PrintBridgeFormPage> {
             _LabeledField(
               label: 'Bridge Token',
               required: true,
-              hint: 'Paste token from Settings > Printer Setup',
+              hint: 'paste token ',
               controller: _bridgeTokenCtrl,
               icon: Icons.vpn_key_outlined,
-              obscureText: _obscureToken,
               validator: (v) => (v == null || v.trim().isEmpty)
-                  ? 'Bridge token is required'
+                  ? 'Bridge Token is required'
                   : null,
-              suffixIcon: IconButton(
-                icon: Icon(_obscureToken
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined),
-                onPressed: () => setState(() => _obscureToken = !_obscureToken),
-              ),
             ),
+
             const SizedBox(height: 14),
             _LabeledField(
               label: 'Client ID',
@@ -283,6 +300,19 @@ class _PrintBridgeFormPageState extends State<PrintBridgeFormPage> {
               runSpacing: 8,
               children: [
                 TextButton.icon(
+                  onPressed: provider.isDiscovering ? null : _discoverPrinters,
+                  icon: provider.isDiscovering
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.radar, size: 18),
+                  label: Text(provider.isDiscovering
+                      ? 'Scanning...'
+                      : 'Discover printers'),
+                ),
+                TextButton.icon(
                   onPressed: _testPrinter,
                   icon: const Icon(Icons.wifi_tethering, size: 18),
                   label: const Text('Test printer connection'),
@@ -294,6 +324,51 @@ class _PrintBridgeFormPageState extends State<PrintBridgeFormPage> {
                 ),
               ],
             ),
+            if (provider.isDiscovering && provider.discoveryProgress.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                provider.discoveryProgress,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+            if (provider.discoveredPrinters.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    'Discovered:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  for (final ip in provider.discoveredPrinters)
+                    ActionChip(
+                      avatar: const Icon(Icons.print, size: 14),
+                      label: Text(ip, style: const TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        setState(() {
+                          _printerIpCtrl.text = ip;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Selected printer IP: $ip'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 18),
             const _SectionTitle('Behavior'),
             const SizedBox(height: 12),

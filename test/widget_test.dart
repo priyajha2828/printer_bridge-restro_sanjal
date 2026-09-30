@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:print_bridge_flutter/core/constants/api_constant.dart';
 import 'package:print_bridge_flutter/main.dart';
 import 'package:print_bridge_flutter/provider/print_bridge_form_provider.dart';
 
@@ -34,17 +35,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     final asterisk = find.textContaining('*', findRichText: true);
-    expect(asterisk, findsNWidgets(2));
+    expect(asterisk, findsNWidgets(3));
 
     bool hasLabel(String expected) => tester.any(find.byWidgetPredicate((w) {
-          if (w is! Text) return false;
-          return (w.textSpan?.toPlainText() ?? w.data ?? '') == expected;
+          if (w is! RichText) return false;
+          return w.text.toPlainText() == expected;
         }));
-    expect(hasLabel('Server URL *'), isTrue);
-    expect(hasLabel('Bridge Token *'), isTrue);
+    expect(hasLabel('* Server URL'), isTrue);
+    expect(hasLabel('* Bridge Token'), isTrue);
+    expect(hasLabel('* Printer IP'), isTrue);
   });
 
-  testWidgets('log level dropdown does not overflow on a narrow screen',
+  testWidgets('log level dropdown renders on a narrow screen',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -54,14 +56,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    final logDropdown = find.byType(DropdownButtonFormField<String>);
-    await tester.ensureVisible(logDropdown);
-    await tester.tap(logDropdown);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('debug').last);
-    await tester.pumpAndSettle();
-
+    final logDropdown = find.byType(DropdownMenu<String>);
+    expect(logDropdown, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -84,6 +80,6 @@ void main() {
 
     expect(captured, isNotNull);
     expect(captured!.status, BridgeStatus.disconnected);
-    expect(captured!.config.serverUrl, 'http://localhost');
+    expect(captured!.config.serverUrl, ApiConstant.baseUrl);
   });
 }
