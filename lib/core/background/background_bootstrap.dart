@@ -56,8 +56,9 @@ class BackgroundBootstrap {
     void Function(bool ok, String message) onLog,
   ) async {
     const androidConfig = FlutterBackgroundAndroidConfig(
-      notificationTitle: 'MobileBridge',
-      notificationText: 'MobileBridge app is running in the background',
+      notificationTitle: 'RestroSanjalBridge',
+      notificationText: 'RestroSanjalBridge app is running in the background',
+
       notificationImportance: AndroidNotificationImportance.normal,
       // Must exist in android/app/src/main/res/drawable, otherwise
       // getIdentifier() returns 0 and Android rejects startForeground().

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:print_bridge_flutter/core/constants/api_constant.dart';
-import 'package:print_bridge_flutter/main.dart';
-import 'package:print_bridge_flutter/provider/print_bridge_form_provider.dart';
+import 'package:RestroSanjalBridge/core/constants/api_constant.dart';
+import 'package:RestroSanjalBridge/main.dart';
+import 'package:RestroSanjalBridge/provider/print_bridge_form_provider.dart';
 
 import 'package:provider/provider.dart';
 

@@ -1,6 +1,7 @@
+import 'package:RestroSanjalBridge/page/splash_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:print_bridge_flutter/page/print_bridge_form_page.dart';
-import 'package:print_bridge_flutter/provider/print_bridge_form_provider.dart';
+import 'package:RestroSanjalBridge/page/print_bridge_form_page.dart';
+import 'package:RestroSanjalBridge/provider/print_bridge_form_provider.dart';
 import 'package:provider/provider.dart';
 
 Future<void> main() async {
@@ -30,7 +31,7 @@ class PrintBridgeApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFFF4F6F8),
           fontFamily: 'Roboto',
         ),
-        home: const PrintBridgeFormPage(),
+          home: const SplashScreen(next: PrintBridgeFormPage()),
       ),
     );
   }
