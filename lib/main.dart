@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_background/flutter_background.dart';
 import 'package:print_bridge_flutter/page/print_bridge_form_page.dart';
 import 'package:print_bridge_flutter/provider/print_bridge_form_provider.dart';
 import 'package:provider/provider.dart';
@@ -7,32 +6,11 @@ import 'package:provider/provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Configure the Android foreground-service notification.
-  const androidConfig = FlutterBackgroundAndroidConfig(
-    notificationTitle: 'MobileBridge',
-    notificationText: 'MobileBridge app is running in the background',
-    notificationImportance: AndroidNotificationImportance.normal,
-    notificationIcon: AndroidResource(
-      name: 'ic_notification',
-      defType: 'drawable',
-    ),
-  );
-
-  // Initialize flutter_background before starting the Flutter application.
-  final initialized = await FlutterBackground.initialize(
-    androidConfig: androidConfig,
-  );
-
-  if (!initialized) {
-    debugPrint(
-      'Print Bridge: failed to initialize background execution.',
-    );
-  } else {
-    debugPrint(
-      'Print Bridge: background execution initialized.',
-    );
-  }
-
+  // No platform calls are awaited here. FlutterBackground.initialize() can
+  // block for as long as the user stays on the Android "ignore battery
+  // optimizations" settings screen, so awaiting it before runApp() leaves a
+  // released APK stuck on a blank window. It is set up lazily on Connect
+  // instead, where the outcome is reported in the activity log.
   runApp(const PrintBridgeApp());
 }
 

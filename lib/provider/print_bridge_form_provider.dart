@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/print_bridge_config.dart';
+import '../core/background/background_bootstrap.dart';
 import '../services/print_bridge_services.dart';
 
 enum BridgeStatus {
@@ -212,6 +213,17 @@ class PrintBridgeProvider extends ChangeNotifier {
       // notification can appear in the tray.
       await _ensureNotificationPermission();
 
+      // The plugin is configured here rather than in main() so a failure is
+      // reported in the activity log instead of hanging a blank window.
+      final configured = await BackgroundBootstrap.ensureInitialized(
+        (ok, message) =>
+            _addLog(ok ? LogLevel.info : LogLevel.error, message),
+      );
+
+      if (!configured) {
+        return false;
+      }
+
       debugPrint('Print Bridge: starting Android foreground service...');
 
       final enabled = await FlutterBackground.enableBackgroundExecution();
@@ -227,6 +239,8 @@ class PrintBridgeProvider extends ChangeNotifier {
         );
 
         notifyListeners();
+
+        _warnIfBatteryOptimised();
 
         return true;
       }
@@ -251,6 +265,21 @@ class PrintBridgeProvider extends ChangeNotifier {
 
       return false;
     }
+  }
+
+  /// Non-blocking hint: Android may throttle or kill the poll loop once the
+  /// screen is off unless the app is exempt from battery optimisation.
+  void _warnIfBatteryOptimised() {
+    BackgroundBootstrap.isBatteryExempt().then((exempt) {
+      if (exempt) return;
+
+      _addLog(
+        LogLevel.warn,
+        'Battery optimisation is still active. Set Print Bridge to '
+        '"Unrestricted" in Settings > Apps > Print Bridge > Battery, '
+        'otherwise Android can pause polling when the screen is off.',
+      );
+    });
   }
 
   Future<void> _disableBackgroundExecution() async {
